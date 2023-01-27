@@ -3,6 +3,8 @@ const asyncHandler = require("express-async-handler");
 const { generateToken } = require("../config/jwtToken");
 const validateMongoDbId = require("../utils/validateMongodbid");
 const { generateRefreshToken } = require("../config/refreshToken");
+const { JsonWebTokenError } = require("jsonwebtoken");
+const jwt = require("jsonwebtoken")
 
 
 const createUser = asyncHandler(async(req, res) => {
@@ -51,6 +53,51 @@ const loginUserCtrl = asyncHandler(async(req, res) => {
     }
 });
 
+
+// Handle refsresh tokern 
+
+const handleRefreshToken = asyncHandler(async(req, res) => {
+    const cookie = req.cookies;
+    if(!cookie.refreshToken) throw new Error('No Refresh Token in Cookies');
+    const refreshToken = cookie.refreshToken;
+    console.log(refreshToken);
+    const user = await User.findOne({refreshToken});
+    if(!user) throw new Error('No Refresh token present in db or not matched')
+    
+    jwt.verify(refreshToken, process.env.JWT_SECRET, (err, decoded) =>{
+        if(err || user.id !== decoded.id ){
+            throw new Error("There is something wrong with refresh token")
+        }
+        const accessToken = generateToken(user?._id)
+        res.json({accessToken})
+    })
+})
+
+// Logout Functionality  
+const logout = asyncHandler(async(req, res) => {
+
+    const cookie = req.cookies;
+    if(!cookie.refreshToken) throw new Error('No Refresh Token in Cookies');
+    const refreshToken = cookie.refreshToken;
+    const user = await User.findOne({refreshToken});
+    if(!user) {
+        res.clearCookie('refreshToken',{
+            httpOnly: true,
+            secure: true
+        });
+        return res.sendStatus(204); //forbidden
+
+    }
+    await User.findOneAndUpdate(refreshToken, {
+        refreshToken:"",
+    })
+
+    res.clearCookie('refreshToken',{
+        httpOnly: true,
+        secure: true
+    });
+    res.sendStatus(204); //forbidden
+});
 
 // Update a user 
 
@@ -157,4 +204,4 @@ const unblockUser = asyncHandler( async(req, res) => {
         throw new Error(error);
     }
 })
-module.exports={createUser, loginUserCtrl, getallUsers, getaUser, deleteaUser, updatedUser,blockUser, unblockUser};
+module.exports={createUser, loginUserCtrl, getallUsers, getaUser, deleteaUser, updatedUser,blockUser, unblockUser, handleRefreshToken,logout};
